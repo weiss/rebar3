@@ -11,6 +11,13 @@
 7. [Migrating from rebar2](#migrating-from-rebar2)
 8. [Additional Resources](#additional-resources)
 
+## About This Rebar3 Fork
+
+This is a fork of the [Rebar3 repository](https://github.com/erlang/rebar3)
+which auto-publishes [source archives](https://github.com/weiss/rebar3/releases)
+of the unmodified Rebar3 code whenever a new release is tagged. The source
+archives include a copy of all Rebar3 dependencies.
+
 ## What is Rebar3
 
 Rebar3 is an Erlang tool that makes it easy to create, develop, and

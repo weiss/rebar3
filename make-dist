@@ -1,0 +1,137 @@
+#!/bin/sh
+
+# Copyright (c) 2021 Holger Weiss <holger@zedat.fu-berlin.de>.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# This script depends on GNU Tar, GNU sed, Git, and curl.
+
+set -e
+set -u
+
+export PATH='/usr/local/bin:/usr/bin:/bin'
+
+base_url='https://repo.hex.pm/tarballs'
+deps_dir='_build/default/lib'
+repo_dir="$PWD"
+app_src='src/rebar.app.src.script'
+rebar3_vsn=$(git describe --tags | sed -e 's|upstream/||' -e 's|-g.*||')
+myself=${0##*/}
+known_deps='
+    bbmustache
+    certifi
+    cf
+    cth_readable
+    erlware_commons
+    eunit_formatters
+    getopt
+    providers
+    relx
+    ssl_verify_fun
+'
+
+debug()
+{
+    if [ "${DEBUG-false}" != 'false' ]
+    then
+        echo "$myself: $*"
+    fi
+}
+
+abort()
+{
+    echo >&2 "$myself: $*, aborting."
+    exit 1
+}
+
+is_known_dep()
+{
+    dep=$1
+
+    for known_dep in $known_deps
+    do
+        test "$dep" = "$known_dep" && return 0
+    done
+    return 1
+}
+
+check_license()
+{
+    app=$1
+    license=$(sed -n 's/.*<<"licenses">>.*"\([^"]*\)".*/\1/p' 'metadata.config')
+
+    if [ -n "$license" ]
+    then
+        debug "License of $app $vsn: $license"
+    else
+        abort "Cannot find license of $app"
+    fi
+}
+
+get_deps()
+{
+    sed -n 's/.*pkg, *<<"\([^"]*\)">>, *<<"\([^"]*\)">>.*/\1 \2/p' 'rebar.lock' |
+        while read app vsn
+        do
+            app_dir="$repo_dir/$deps_dir/$app"
+            tar="$app-$vsn.tar"
+            if ! is_known_dep "$app"
+            then
+                debug "Dependency $app not in list of 'known_deps'."
+            fi
+            if ! [ -d "$app_dir" ]
+            then
+                files='contents.tar.gz metadata.config'
+                debug "Fetching dependency: $app $vsn"
+                mkdir "$app_dir"
+                cd "$app_dir"
+                curl -sSL "$base_url/$tar" | tar -xf - $files
+                check_license "$app"
+                tar -xzf 'contents.tar.gz'
+                rm $files
+                test -e 'rebar.lock' && get_deps
+                cd "$OLDPWD"
+            else
+                debug "Dependency $app $vsn is available already."
+            fi
+        done
+}
+
+set_version()
+{
+    vsn=$1
+
+    sed -i "s/{ *vsn, *\"git\"}/{vsn, \"$vsn\"}/" "$app_src"
+}
+
+if ! [ -e 'rebar.config' ] || ! [ -e 'bootstrap' ]
+then
+    abort "Please call this script from the repository's root directory"
+fi
+if [ -d "$deps_dir" ]
+then
+    debug "Directory $deps_dir already exists."
+else
+    debug "Creating directory: $deps_dir"
+    mkdir -p "$deps_dir"
+fi
+get_deps
+set_version "$rebar3_vsn"
+rebar3_dir="rebar3-$rebar3_vsn"
+rebar3_tar="$rebar3_dir.tar"
+echo "$app_src export-ignore" >'.git/info/attributes'
+git archive --format='tar' --prefix="$rebar3_dir/" 'HEAD' >"$rebar3_tar"
+rm '.git/info/attributes'
+tar --transform "s/^/$rebar3_dir\//" -rf "$rebar3_tar" "$deps_dir" "$app_src"
+gzip -f9 "$rebar3_tar"
+debug "Created: $rebar3_tar.gz"

@@ -1,0 +1,52 @@
+name: Publish source archive
+
+on:
+  workflow_dispatch: {}
+  schedule:
+    - cron: '44 4,16 * * *'
+
+jobs:
+  publish:
+    name: Publish
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository code
+        uses: actions/checkout@v2
+        with:
+          token: ${{secrets.workflow}}
+      - name: Check for new upstream tag
+        id: tag
+        run: |
+          git remote add erlang https://github.com/erlang/rebar3.git
+          git ls-remote --tags origin '*.*.*' | while read sha tag
+            do
+              if ! echo $tag | grep -Fq '{}' && ! git tag | grep -q "^$tag$"
+              then
+                git fetch --no-tags origin tag ${tag#refs/tags/}
+              fi
+            done
+          git ls-remote --tags erlang '*.*.*' | while read sha tag
+            do
+              tag=${tag#refs/tags/}
+              if ! echo $tag | grep -Fq '{}' && ! git tag | grep -q "^$tag$"
+              then
+                git fetch --no-tags erlang tag $tag
+                git reset --hard $tag
+                git push origin $tag
+                echo ::set-output name=version::$tag
+                break # Handle only one tag per workflow run.
+              fi
+            done
+      - name: Create tarball
+        if: steps.tag.outputs.version
+        run: |
+          git checkout origin/feature/make-dist make-dist
+          DEBUG=true ./make-dist
+      - name: Create release
+        if: steps.tag.outputs.version && success()
+        uses: ncipollo/release-action@v1
+        with:
+          omitName: true
+          omitBody: true
+          tag: ${{steps.tag.outputs.version}}
+          artifacts: rebar3-${{steps.tag.outputs.version}}.tar.gz
