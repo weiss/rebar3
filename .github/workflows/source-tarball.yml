@@ -40,8 +40,8 @@ jobs:
       - name: Create tarball
         if: steps.tag.outputs.version
         run: |
-          git checkout origin/feature/make-dist make-dist
-          DEBUG=true ./make-dist
+          git checkout origin/feature/make-dist make-dist rebar.config.script
+          ./make-dist -d
       - name: Create release
         if: steps.tag.outputs.version && success()
         uses: ncipollo/release-action@v1

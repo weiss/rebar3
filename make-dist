@@ -19,12 +19,13 @@
 set -e
 set -u
 
-export PATH='/usr/local/bin:/usr/bin:/bin'
-
+debug='false'
 base_url='https://repo.hex.pm/tarballs'
 deps_dir='_build/default/lib'
 repo_dir="$PWD"
+hex_dir='hex'
 app_src='src/rebar.app.src.script'
+config_script='rebar.config.script'
 rebar3_vsn=$(git describe --tags | sed -e 's|upstream/||' -e 's|-g.*||')
 myself=${0##*/}
 known_deps='
@@ -42,7 +43,7 @@ known_deps='
 
 debug()
 {
-    if [ "${DEBUG-false}" != 'false' ]
+    if [ "${debug-false}" != 'false' ]
     then
         echo "$myself: $*"
     fi
@@ -78,6 +79,17 @@ check_license()
     fi
 }
 
+get_index()
+{
+    files="_build rebar3 $hex_dir/hexpm"
+
+    debug 'Building rebar3 to have it generate the package index file'
+    rm -rf $files
+    ./bootstrap
+    ./rebar3 get-deps
+    rm -rf $files
+}
+
 get_deps()
 {
     sed -n 's/.*pkg, *<<"\([^"]*\)">>, *<<"\([^"]*\)">>.*/\1 \2/p' 'rebar.lock' |
@@ -87,7 +99,7 @@ get_deps()
             tar="$app-$vsn.tar"
             if ! is_known_dep "$app"
             then
-                debug "Dependency $app not in list of 'known_deps'."
+                abort "Dependency $app not in list of 'known_deps'."
             fi
             if ! [ -d "$app_dir" ]
             then
@@ -118,13 +130,18 @@ if ! [ -e 'rebar.config' ] || ! [ -e 'bootstrap' ]
 then
     abort "Please call this script from the repository's root directory"
 fi
-if [ -d "$deps_dir" ]
-then
-    debug "Directory $deps_dir already exists."
-else
-    debug "Creating directory: $deps_dir"
-    mkdir -p "$deps_dir"
-fi
+
+while getopts d opt
+do
+    case $opt in
+    d) debug='true';;
+    *) abort "Usage: $myself [-h]";;
+    esac
+done
+
+get_index
+debug "Creating directory: $deps_dir"
+mkdir -p "$deps_dir"
 get_deps
 set_version "$rebar3_vsn"
 rebar3_dir="rebar3-$rebar3_vsn"
@@ -132,6 +149,7 @@ rebar3_tar="$rebar3_dir.tar"
 echo "$app_src export-ignore" >'.git/info/attributes'
 git archive --format='tar' --prefix="$rebar3_dir/" 'HEAD' >"$rebar3_tar"
 rm '.git/info/attributes'
-tar --transform "s/^/$rebar3_dir\//" -rf "$rebar3_tar" "$deps_dir" "$app_src"
+tar --transform "s/^/$rebar3_dir\//" -rf \
+    "$rebar3_tar" "$config_script" "$app_src" "$deps_dir" "$hex_dir"
 gzip -f9 "$rebar3_tar"
 debug "Created: $rebar3_tar.gz"

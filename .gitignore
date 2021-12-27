@@ -25,3 +25,6 @@ env
 
 # hex_core artifact
 src/vendored/r3_safe_erl_term.erl
+
+# make-dist
+/hex/
