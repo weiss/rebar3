@@ -42,6 +42,15 @@ jobs:
         run: |
           git checkout origin/feature/make-dist make-dist rebar.config.script
           ./make-dist -d
+      - name: Test tarball
+        if: steps.tag.outputs.version && success()
+        run: |
+          cd $(mktemp -d)
+          tar -xzf $OLDPWD/rebar3-${{steps.tag.outputs.version}}.tar.gz
+          cd rebar3-${{steps.tag.outputs.version}}
+          rm -rf ~/.cache
+          ./bootstrap
+          test -x rebar3
       - name: Create release
         if: steps.tag.outputs.version && success()
         uses: ncipollo/release-action@v1
@@ -50,3 +59,6 @@ jobs:
           omitBody: true
           tag: ${{steps.tag.outputs.version}}
           artifacts: rebar3-${{steps.tag.outputs.version}}.tar.gz
+      - name: Delete tag
+        if: steps.tag.outputs.version && failure()
+        run: git push -d origin ${{steps.tag.outputs.version}}
